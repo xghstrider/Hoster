@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import Navbar from '@/components/hoster/Navbar';
+import Navbar, { type ConnectionState } from '@/components/hoster/Navbar';
 import Sidebar from '@/components/hoster/Sidebar';
+import MobileSidePanel from '@/components/hoster/MobileSidePanel';
 import ServicesList from '@/components/hoster/ServicesList';
 import ServiceDetailView from '@/components/hoster/ServiceDetailView';
 import DatabasesView from '@/components/hoster/DatabasesView';
@@ -94,12 +95,19 @@ export default function HomePage() {
   const [currentTab, setCurrentTab] = useState<string>('services');
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const selectedService = services.find((s) => s.id === selectedServiceId) ?? null;
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // ── Modal state ───────────────────────────────────────────────────────────
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [isAdvisorModalOpen, setIsAdvisorModalOpen] = useState(false);
 
   const handleSelectTab = (tab: string) => {
+    // "AI Hardware Sizer" is a modal, not a routed view — opening it must
+    // not blank the current tab.
+    if (tab === 'advisor') {
+      setIsAdvisorModalOpen(true);
+      return;
+    }
     setCurrentTab(tab);
     setSelectedServiceId(null);
   };
@@ -326,6 +334,37 @@ export default function HomePage() {
 
   const loading = servicesQ.isLoading || providersQ.isLoading;
 
+  // Control-plane link state for the navbar pill + reconnect banner.
+  // "reconnecting" = the UI is up but a core API call is failing — typical on
+  // serverless hosts (e.g. Vercel) while a function cold-starts.
+  const coreErrored = servicesQ.isError || providersQ.isError || hostMetricsQ.isError;
+  const connectionState: ConnectionState = loading ? 'connecting' : coreErrored ? 'reconnecting' : 'online';
+
+  const handleRetryConnection = () => {
+    void servicesQ.refetch();
+    void providersQ.refetch();
+    void hostMetricsQ.refetch();
+    void databasesQ.refetch();
+  };
+
+  const sidebarNavProps = {
+    currentTab,
+    onSelectTab: handleSelectTab,
+    serviceCounts,
+    dbCounts,
+    storageCount: volumes.length + s3Buckets.length,
+    connectedProviders: providers.filter((p) => p.status === 'connected').length,
+    hostStats: hostMetricsQ.data
+      ? {
+          cpuPercent: hostMetricsQ.data.cpu.usagePercent,
+          ramPercent: hostMetricsQ.data.memory.usedPercent,
+          ramTotalGb: hostMetricsQ.data.memory.totalGb,
+          gpuDetected: hostMetricsQ.data.gpu.detected,
+          gpuModel: hostMetricsQ.data.gpu.model,
+        }
+      : null,
+  } as const;
+
   return (
     <div className="min-h-screen bg-[#090a0f] text-zinc-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
       {/* Top Global Navigation Bar */}
@@ -334,38 +373,52 @@ export default function HomePage() {
         onOpenAdvisor={() => setIsAdvisorModalOpen(true)}
         activeView={currentTab}
         onSelectTab={handleSelectTab}
+        onOpenMobileNav={() => setMobileNavOpen(true)}
+        connectionState={connectionState}
       />
 
       {/* Main Container Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar Navigation */}
-        <Sidebar
-          currentTab={currentTab}
-          onSelectTab={handleSelectTab}
-          serviceCounts={serviceCounts}
-          dbCounts={dbCounts}
-          storageCount={volumes.length + s3Buckets.length}
-          connectedProviders={providers.filter((p) => p.status === 'connected').length}
-          hostStats={
-            hostMetricsQ.data
-              ? {
-                  cpuPercent: hostMetricsQ.data.cpu.usagePercent,
-                  ramPercent: hostMetricsQ.data.memory.usedPercent,
-                  ramTotalGb: hostMetricsQ.data.memory.totalGb,
-                  gpuDetected: hostMetricsQ.data.gpu.detected,
-                  gpuModel: hostMetricsQ.data.gpu.model,
-                }
-              : null
-          }
+        {/* Sidebar Navigation (desktop) + Mobile Side Panel (< md) */}
+        <Sidebar {...sidebarNavProps} />
+        <MobileSidePanel
+          open={mobileNavOpen}
+          onOpenChange={setMobileNavOpen}
+          {...sidebarNavProps}
         />
 
         {/* Dynamic Content Area */}
-        <main className="flex-1 overflow-y-auto px-4 lg:px-8 py-6">
+        <main className="flex-1 overflow-y-auto px-4 lg:px-8 py-6 min-w-0">
           <div className="max-w-7xl mx-auto space-y-6">
+            {/* Initial load — skeleton instead of a stuck text line */}
             {loading && (
-              <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 px-1">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                Connecting to control plane...
+              <div className="space-y-4" aria-busy="true" aria-live="polite">
+                <div className="h-5 w-52 rounded bg-zinc-800/60 animate-pulse" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="h-28 rounded-xl bg-zinc-900/70 border border-zinc-800/60 animate-pulse" />
+                  ))}
+                </div>
+                <p className="sr-only">Connecting to control plane…</p>
+              </div>
+            )}
+
+            {/* Cold-start / transient API failure banner (e.g. serverless hosts) */}
+            {!loading && connectionState === 'reconnecting' && (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-xs text-amber-200"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                  Control plane reconnecting — cold start or transient error. Data will refresh automatically.
+                </span>
+                <button
+                  onClick={handleRetryConnection}
+                  className="px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-100 font-medium transition active:scale-95"
+                >
+                  Retry now
+                </button>
               </div>
             )}
 

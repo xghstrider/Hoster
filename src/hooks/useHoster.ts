@@ -38,11 +38,28 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
+/**
+ * Shared resilience options for control-plane queries.
+ *
+ * On serverless hosts (Vercel, Netlify…) every API request can hit a cold
+ * start: the first call is slow and may time out. Retrying a couple of times
+ * with back-end, keeping already-fetched data visible (no blanking on
+ * refetch) and skipping window-focus refetch storms keeps the dashboard calm
+ * instead of flashing "Connecting…" every few seconds.
+ */
+const QUERY_OPTS = {
+  retry: 2,
+  retryDelay: (attempt: number) => Math.min(1200 * 2 ** attempt, 5000),
+  refetchOnWindowFocus: false,
+  staleTime: 2000,
+} as const;
+
 export function useServices() {
   return useQuery({
     queryKey: ['services'],
     queryFn: () => api<Service[]>('/api/services'),
     refetchInterval: 3500,
+    ...QUERY_OPTS,
   });
 }
 
@@ -52,6 +69,7 @@ export function useService(id: string | null) {
     queryFn: () => api<Service>(`/api/services/${id}`),
     enabled: !!id,
     refetchInterval: 2500,
+    ...QUERY_OPTS,
   });
 }
 
@@ -60,6 +78,7 @@ export function useDatabases() {
     queryKey: ['databases'],
     queryFn: () => api<{ postgres: PostgresDatabase[]; redis: RedisDatabase[] }>('/api/databases'),
     refetchInterval: 5000,
+    ...QUERY_OPTS,
   });
 }
 
@@ -68,6 +87,7 @@ export function useVolumes() {
     queryKey: ['volumes'],
     queryFn: () => api<PersistentVolume[]>('/api/volumes'),
     refetchInterval: 8000,
+    ...QUERY_OPTS,
   });
 }
 
@@ -76,6 +96,7 @@ export function useBuckets() {
     queryKey: ['buckets'],
     queryFn: () => api<S3BucketConfig[]>('/api/buckets'),
     refetchInterval: 8000,
+    ...QUERY_OPTS,
   });
 }
 
@@ -84,6 +105,7 @@ export function useDomains() {
     queryKey: ['domains'],
     queryFn: () => api<CustomDomain[]>('/api/domains'),
     refetchInterval: 8000,
+    ...QUERY_OPTS,
   });
 }
 
@@ -92,6 +114,7 @@ export function useProviders() {
     queryKey: ['providers'],
     queryFn: () => api<{ providers: SettingsViewProvider[]; nodes: CustomServerNode[] }>('/api/providers'),
     refetchInterval: 6000,
+    ...QUERY_OPTS,
   });
 }
 
@@ -100,6 +123,7 @@ export function useHostMetrics() {
     queryKey: ['system', 'metrics'],
     queryFn: () => api<LiveSystemMetrics>('/api/system/metrics'),
     refetchInterval: 2500,
+    ...QUERY_OPTS,
   });
 }
 
@@ -108,6 +132,7 @@ export function useHostHistory(points = 80) {
     queryKey: ['system', 'history', points],
     queryFn: () => api<HostHistoryPoint[]>(`/api/system/history?points=${points}`),
     refetchInterval: 15000,
+    ...QUERY_OPTS,
   });
 }
 
@@ -120,6 +145,7 @@ export function useLogs(filter: { scope?: string; serviceId?: string; limit?: nu
     queryKey: ['logs', filter.scope ?? '', filter.serviceId ?? '', filter.limit ?? 80],
     queryFn: () => api<LogEntry[]>(`/api/logs?${params.toString()}`),
     refetchInterval: 5000,
+    ...QUERY_OPTS,
   });
 }
 

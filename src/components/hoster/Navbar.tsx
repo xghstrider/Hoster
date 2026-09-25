@@ -9,22 +9,47 @@ import {
   Globe, 
   Sparkles, 
   ShieldCheck, 
-  Layers
+  Layers,
+  Menu
 } from 'lucide-react';
+
+export type ConnectionState = 'connecting' | 'online' | 'reconnecting';
 
 interface NavbarProps {
   onNewDeploy: () => void;
   onOpenAdvisor: () => void;
   activeView: string;
   onSelectTab?: (tab: string) => void;
+  /** Opens the mobile navigation side panel (< md). */
+  onOpenMobileNav?: () => void;
+  /** Live control-plane link state — drives the status pill. */
+  connectionState?: ConnectionState;
 }
 
-export default function Navbar({ onNewDeploy, onOpenAdvisor, activeView, onSelectTab }: NavbarProps) {
+const CONNECTION_META: Record<ConnectionState, { label: string; dot: string; text: string }> = {
+  connecting: { label: 'Connecting', dot: 'bg-cyan-400 animate-pulse', text: 'text-cyan-300' },
+  online: { label: 'Online', dot: 'bg-emerald-400', text: 'text-emerald-400' },
+  reconnecting: { label: 'Reconnecting', dot: 'bg-amber-400 animate-pulse', text: 'text-amber-300' },
+};
+
+export default function Navbar({ onNewDeploy, onOpenAdvisor, activeView, onSelectTab, onOpenMobileNav, connectionState = 'online' }: NavbarProps) {
+  const conn = CONNECTION_META[connectionState];
   return (
     <header className="sticky top-0 z-40 w-full border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md px-4 lg:px-8 py-3">
       <div className="flex items-center justify-between gap-4">
+        {/* Mobile: side-panel trigger (full nav incl. Settings lives here) */}
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          aria-label="Open navigation menu"
+          aria-haspopup="dialog"
+          className="md:hidden flex items-center justify-center w-10 h-10 shrink-0 rounded-lg border border-zinc-800 bg-zinc-900/80 text-zinc-300 hover:text-white hover:bg-zinc-800 transition active:scale-95"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
         {/* Logo and Brand */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 min-w-0">
           <button 
             onClick={() => onSelectTab && onSelectTab('services')}
             className="flex items-center gap-2.5 text-left focus:outline-none"
@@ -39,7 +64,7 @@ export default function Navbar({ onNewDeploy, onOpenAdvisor, activeView, onSelec
                 <span className="font-bold text-base tracking-tight bg-gradient-to-r from-zinc-100 via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
                   NexusHost
                 </span>
-                <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">
+                <span className="hidden sm:inline text-[10px] font-mono uppercase tracking-wider whitespace-nowrap px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">
                   Live Cloud Hub
                 </span>
               </div>
@@ -48,6 +73,16 @@ export default function Navbar({ onNewDeploy, onOpenAdvisor, activeView, onSelec
               </p>
             </div>
           </button>
+
+          {/* Live control-plane status pill */}
+          <div
+            className="flex md:hidden items-center gap-1.5 px-2 py-1 shrink-0 rounded-md bg-zinc-900/80 border border-zinc-800"
+            role="status"
+            aria-live="polite"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${conn.dot}`} />
+            <span className={`text-[10px] font-mono ${conn.text}`}>{conn.label}</span>
+          </div>
 
           {/* Org & Project Selector */}
           <div className="hidden md:flex items-center gap-2 pl-4 border-l border-zinc-800 text-xs">
@@ -80,6 +115,18 @@ export default function Navbar({ onNewDeploy, onOpenAdvisor, activeView, onSelec
           <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 text-xs text-zinc-300 font-mono">
             <Globe className="w-3.5 h-3.5 text-indigo-400" />
             <span>us-east-va (Edge Anycast)</span>
+          </div>
+
+          {/* Desktop control-plane status */}
+          <div
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 text-xs font-mono"
+            role="status"
+            aria-live="polite"
+            title="Control plane API link state"
+          >
+            <span className={`w-2 h-2 rounded-full ${conn.dot}`} />
+            <span className="text-zinc-400">Plane:</span>
+            <span className={conn.text}>{conn.label}</span>
           </div>
 
           {/* AI Architecture & Sizing Advisor */}
